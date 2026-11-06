@@ -1,0 +1,8 @@
+run_id: "005_lgbm"
+hypothesis: "LightGBM quantile regression with default parameters on the same base features captures non-linear power-curve and error-regime effects and beats linear QR on CRPS, possibly at the cost of under-covered intervals."
+change: "LightGBM quantile regression, one model per quantile, LightGBM default parameters, on BASE_FEATURES"
+model: lgbm
+params: {}
+feature_set: [da_on, da_off_adj, da_total_adj, ramp_1h, ramp_3h, hour, doy_sin, doy_cos, err_mean_7d, err_mae_7d]
+half_life_days: null
+cqr_calib_days: null
