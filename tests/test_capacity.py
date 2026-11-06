@@ -120,3 +120,19 @@ def test_real_data_ratio_sanity():
     r = capacity_ratio(df, _days("2022-06-15", "2026-09-15"))
     assert 0.85 <= r.loc["2022-06-15"] <= 1.15
     assert r.loc["2026-09-15"] > 1.3
+
+
+def test_fallback_independent_of_requested_days():
+    df = _frame(actual=600.0)
+    df.loc[df.index >= "2026-01-20", "cur_off"] = 50.0
+    D = pd.Timestamp("2026-02-25")  # calm window: no qualifying hours
+    alone = capacity_ratio(df, _days(D)).loc[D]
+    together = capacity_ratio(df, _days("2026-01-10", D)).loc[D]
+    assert alone == pytest.approx(together)
+    assert alone == pytest.approx(1.2) and alone != 1.0
+
+
+def test_non_monotonic_index_rejected():
+    df = _frame(n_days=3).iloc[::-1]
+    with pytest.raises(ValueError):
+        capacity_ratio(df, _days("2026-01-02"))

@@ -23,10 +23,14 @@ def capacity_ratio(
     last_known_hour(D)]. Only hours with ``cur_off > min_cur_off`` and both
     ``actual_off`` and ``cur_off`` non-NaN count. ratio = sum(actual_off) /
     sum(cur_off). With no qualifying hours, the most recent valid ratio of an
-    earlier target day is used, else 1.0. The result is always finite.
+    earlier day (from the full daily history, independent of the requested days) is used, else 1.0. The result is always finite.
     """
+    if not df.index.is_monotonic_increasing:
+        raise ValueError("df index must be monotonic increasing")
     days = pd.DatetimeIndex(target_days).normalize()
-    uniq = days.unique().sort_values()
+    # Full daily sequence so the fallback never depends on which days were requested.
+    start = min(df.index[0].normalize(), days.min())
+    uniq = pd.date_range(start, days.max(), freq="D")
 
     cur = df["cur_off"].to_numpy(dtype=float)
     act = df["actual_off"].to_numpy(dtype=float)
@@ -61,7 +65,9 @@ def apply_capacity_correction(df: pd.DataFrame, ratios: pd.Series) -> pd.DataFra
     NaN. ``da_on`` is unchanged.
     """
     out = df.copy()
-    r = ratios[~ratios.index.duplicated(keep="last")]
+    r = ratios.copy()
+    r.index = pd.DatetimeIndex(r.index).normalize()
+    r = r[~r.index.duplicated(keep="last")]
     per_hour = r.reindex(df.index.normalize()).to_numpy(dtype=float)
     out["da_off_adj"] = per_hour * out["da_off"].to_numpy(dtype=float)
     out["da_total_adj"] = out["da_on"] + out["da_off_adj"]
