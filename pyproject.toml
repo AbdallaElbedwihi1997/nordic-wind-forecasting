@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "windfc"
+version = "0.1.0"
+description = "Day-ahead wind power forecasting for DK1 (West Denmark)"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas",
+    "numpy",
+    "pyarrow",
+    "lightgbm",
+    "scikit-learn",
+    "scipy",
+    "pyyaml",
+    "matplotlib",
+    "jupyter",
+    "nbconvert",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
