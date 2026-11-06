@@ -17,6 +17,16 @@ def main(settlement_csv: str, forecasts_csv: str) -> None:
     print(f"wrote {OUT}")
     print(f"rows: {len(df)}")
     print(f"range: {df.index.min()} -> {df.index.max()}")
+    act = df["actual_total"].isna()
+    da = df["da_total"].isna()
+    both = df.index[act & da]
+    print(f"hours with missing actuals: {int(act.sum())}")
+    print(f"hours with missing vendor DA: {int(da.sum())}")
+    print(
+        "fully-missing hours (no actuals and no DA): "
+        f"{len(both)}, first {both.min() if len(both) else None}, "
+        f"last {both.max() if len(both) else None}"
+    )
     print("NaN counts:")
     print(df.isna().sum().to_string())
 

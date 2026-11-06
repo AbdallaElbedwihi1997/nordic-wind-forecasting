@@ -45,9 +45,14 @@ def _load_forecasts(forecasts_csv: Path) -> pd.DataFrame:
 
 
 def load_raw(settlement_csv: Path, forecasts_csv: Path) -> pd.DataFrame:
-    """Hourly DK1 frame indexed by tz-naive UTC ``hour_utc`` (inner join)."""
+    """Contiguous hourly DK1 frame indexed by tz-naive UTC ``hour_utc``.
+
+    Union of both sources' hours; gaps in either source are NaN.
+    """
     df = _load_actuals(Path(settlement_csv)).join(
-        _load_forecasts(Path(forecasts_csv)), how="inner")
-    df = df[COLUMNS].astype("float64").sort_index()
+        _load_forecasts(Path(forecasts_csv)), how="outer")
+    # contiguous hourly index; hours missing from a source stay NaN (never 0)
+    df = df.reindex(pd.date_range(df.index.min(), df.index.max(), freq="h"))
+    df = df[COLUMNS].astype("float64")
     df.index.name = "hour_utc"
     return df

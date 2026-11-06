@@ -35,7 +35,7 @@ def test_only_dk1_and_wind_types_kept(df):
     assert df.loc["2022-01-01 00:00", "da_total"] == 30.0
     assert df.loc["2022-01-01 00:00", "cur_on"] == 24.0
     assert df.loc["2022-01-01 00:00", "cur_off"] == 14.0
-    assert len(df) == 3
+    assert len(df) == 6
 
 
 def test_missing_vendor_hour_is_nan_not_zero(df):
@@ -51,8 +51,23 @@ def test_index_is_unique_hourly_utc(df):
     assert df.index.is_unique and df.index.is_monotonic_increasing
     assert df.index.tz is None
     assert (df.index.to_series().diff().dropna() == pd.Timedelta("1h")).all()
+    assert df.index.freq == "h" or pd.infer_freq(df.index) == "h"
+    assert df.index.equals(pd.date_range(df.index[0], df.index[-1], freq="h"))
     assert list(df.columns) == [
         "actual_on", "actual_off", "actual_total",
         "da_on", "da_off", "da_total", "cur_on", "cur_off",
     ]
     assert all(df.dtypes == "float64")
+
+
+def test_missing_hour_becomes_nan_row(df):
+    # 03:00 present in settlement only: kept, forecasts NaN, actuals populated
+    row = df.loc["2022-01-01 03:00"]
+    assert row.actual_total == pytest.approx(5 + 1 + 2)
+    assert row[["da_on", "da_off", "da_total", "cur_on", "cur_off"]].isna().all()
+    # 05:00 present in forecasts only: kept, actuals NaN, forecasts populated
+    row = df.loc["2022-01-01 05:00"]
+    assert row[["actual_on", "actual_off", "actual_total"]].isna().all()
+    assert row.da_total == 70.0
+    # 04:00 in neither file: all-NaN row, never zeros
+    assert df.loc["2022-01-01 04:00"].isna().all()
