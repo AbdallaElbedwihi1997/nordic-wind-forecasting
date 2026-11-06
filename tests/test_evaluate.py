@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+from scipy import stats
 
 from windfc import QUANTILES
 from windfc.evaluate import (FOLDS, TEST_PERIOD, diebold_mariano, period_mask,
@@ -113,3 +114,48 @@ def test_period_mask_delivery_day():
     idx = pd.DatetimeIndex(["2025-04-30 21:00", "2025-04-30 22:00", "2025-07-31 21:00", "2025-07-31 22:00"])
     m = period_mask(idx, a, b)
     assert m.tolist() == [False, True, True, False]
+
+
+def _dm_series(d):
+    """Hourly losses over consecutive delivery days with daily-mean diff == d."""
+    from windfc.cutoff import delivery_hours
+    days = pd.date_range("2026-01-12", periods=len(d), freq="D")
+    hrs = delivery_hours(days)
+    dd = pd.Series(np.repeat(np.asarray(d, dtype=float), 24), index=hrs)
+    b = pd.Series(1.0, index=hrs)
+    return b + dd, b
+
+
+def test_dm_hand_pinned_h1():
+    a, b = _dm_series([1, 2, 3, 4])
+    n = 4
+    dbar = 2.5
+    gamma0 = ((-1.5) ** 2 + (-0.5) ** 2 + 0.5 ** 2 + 1.5 ** 2) / n  # 1.25
+    dm = dbar / np.sqrt(gamma0 / n)
+    stat_exp = dm * np.sqrt((n + 1 - 2 * 1 + 1 * 0 / n) / n)
+    p_exp = 2 * stats.t.sf(abs(stat_exp), df=n - 1)
+    assert stat_exp == pytest.approx(np.sqrt(15.0), abs=1e-12)  # 2.5/0.5*sqrt(0.75)
+    stat, p = diebold_mariano(a, b, h=1)
+    assert stat == pytest.approx(stat_exp, abs=1e-9)
+    assert p == pytest.approx(p_exp, abs=1e-9)
+    # sign flips when swapping a and b
+    stat2, p2 = diebold_mariano(b, a, h=1)
+    assert stat2 == pytest.approx(-stat_exp, abs=1e-9)
+    assert p2 == pytest.approx(p_exp, abs=1e-9)
+
+
+def test_dm_hand_pinned_h2_bartlett():
+    a, b = _dm_series([1, 2, 3, 4])
+    n, h = 4, 2
+    dbar = 2.5
+    gamma0 = 1.25
+    # lag-1 autocovariance of dc = [-1.5, -0.5, 0.5, 1.5], denominator n
+    gamma1 = ((-0.5) * (-1.5) + 0.5 * (-0.5) + 1.5 * 0.5) / n  # 0.3125
+    var = gamma0 + 2 * (1 - 1 / h) * gamma1  # 1.5625
+    dm = dbar / np.sqrt(var / n)  # 4.0
+    assert dm == pytest.approx(4.0, abs=1e-12)
+    stat_exp = dm * np.sqrt((n + 1 - 2 * h + h * (h - 1) / n) / n)  # 4*sqrt(0.375)
+    p_exp = 2 * stats.t.sf(abs(stat_exp), df=n - 1)
+    stat, p = diebold_mariano(a, b, h=h)
+    assert stat == pytest.approx(stat_exp, abs=1e-9)
+    assert p == pytest.approx(p_exp, abs=1e-9)

@@ -27,7 +27,18 @@ class LeakageError(Exception):
 
 
 def _day(x):
-    return x.normalize()
+    """Validate that ``x`` holds delivery days (exact midnights) and return it."""
+    if isinstance(x, pd.Timestamp):
+        if x != x.normalize():
+            raise ValueError(f"expected a delivery day (midnight), got {x}; map hours with delivery_day")
+        return x
+    x = pd.DatetimeIndex(x)
+    bad = x.notna() & (x != x.normalize())
+    if bad.any():
+        raise ValueError(
+            f"expected delivery days (midnights), got e.g. {x[bad][0]}; map hours with delivery_day"
+        )
+    return x
 
 
 def delivery_day(hours):
@@ -62,12 +73,14 @@ def delivery_hours(days) -> pd.DatetimeIndex:
 
 def issue_time(target_day):
     """Forecast issue time for delivery day D: D-1 10:00 UTC (Timestamp or
-    DatetimeIndex). Map hours to ``delivery_day`` before calling."""
+    DatetimeIndex). Raises ValueError unless every input is exactly midnight;
+    map hours to ``delivery_day`` before calling."""
     return _day(target_day) - pd.Timedelta(days=1) + pd.Timedelta(hours=_ISSUE_HOUR)
 
 
 def last_known_hour(target_day):
-    """Last actual hour usable for delivery day D: D-1 09:00 UTC."""
+    """Last actual hour usable for delivery day D: D-1 09:00 UTC (delivery
+    days only; non-midnight inputs raise ValueError)."""
     return _day(target_day) - pd.Timedelta(days=1) + pd.Timedelta(hours=_LAST_HOUR)
 
 

@@ -21,7 +21,7 @@ def _asof(ts):
 
 def test_issue_time():
     assert issue_time(D) == pd.Timestamp("2026-03-09 10:00")
-    assert issue_time(pd.Timestamp("2026-03-10 17:45")) == pd.Timestamp("2026-03-09 10:00")
+    assert issue_time(delivery_day(pd.Timestamp("2026-03-10 17:45"))) == pd.Timestamp("2026-03-09 10:00")
     out = issue_time(delivery_day(IDX))
     assert isinstance(out, pd.DatetimeIndex)
     assert (out == pd.Timestamp("2026-03-09 10:00")).all()
@@ -120,3 +120,16 @@ def test_check_features_uses_delivery_day():
     t2 = pd.DatetimeIndex(["2026-01-15 22:00"])  # delivery 2026-01-15
     with pytest.raises(LeakageError):
         check_features(pd.DataFrame({"f": [pd.Timestamp("2026-01-14 11:00")]}, index=t2), t2)
+
+
+@pytest.mark.parametrize("fn", [issue_time, last_known_hour])
+def test_cutoff_rejects_non_midnight_inputs(fn):
+    with pytest.raises(ValueError):
+        fn(pd.Timestamp("2026-03-10 17:45"))
+    with pytest.raises(ValueError):
+        fn(IDX)  # raw hours, not delivery days
+    with pytest.raises(ValueError):
+        fn(pd.DatetimeIndex(["2026-03-10", "2026-03-10 00:30"]))
+    # delivery days (midnights) are fine, scalar and index
+    fn(D)
+    fn(pd.DatetimeIndex(["2026-03-10", "2026-03-11"]))
