@@ -1,0 +1,8 @@
+run_id: "010_cqr30"
+hypothesis: "Under 365-day recency weighting the most recent days carry the most weight, so shrinking the CQR calibration hold-out from 90 to 30 days returns 60 high-weight days to model fitting and lowers 007's mean CRPS by at least 1% on at least 3 of 4 folds while coverage stays within 0.76-0.84."
+change: "007_hl365 with cqr_calib_days 30 (was 90)"
+model: lgbm
+params: {}
+feature_set: [da_on, da_off_adj, da_total_adj, ramp_1h, ramp_3h, hour, doy_sin, doy_cos, err_mean_7d, err_mae_7d]
+half_life_days: 365
+cqr_calib_days: 30
