@@ -1,0 +1,8 @@
+run_id: "011_hl180"
+hypothesis: "Because moving from equal weights to a 365-day half-life improved all 4 folds (006 to 007), the fleet/error regime drifts within a year, so a 180-day half-life lowers 007's mean CRPS by a further 1% on at least 3 of 4 folds."
+change: "007_hl365 with half_life_days 180 (was 365)"
+model: lgbm
+params: {}
+feature_set: [da_on, da_off_adj, da_total_adj, ramp_1h, ramp_3h, hour, doy_sin, doy_cos, err_mean_7d, err_mae_7d]
+half_life_days: 180
+cqr_calib_days: 90
