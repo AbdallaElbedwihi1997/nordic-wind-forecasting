@@ -1,0 +1,8 @@
+run_id: "007_hl365"
+hypothesis: "Exponential recency weighting with a 365-day half-life makes the 006 LightGBM+CQR model track the current fleet and error regime, shrinking its negative bias (fold 3 bias -90 MW) and lowering mean CRPS by at least 1% on at least 3 of 4 folds."
+change: "006_lgbm_cqr90 with half_life_days 365 (was null, full-history equal weights)"
+model: lgbm
+params: {}
+feature_set: [da_on, da_off_adj, da_total_adj, ramp_1h, ramp_3h, hour, doy_sin, doy_cos, err_mean_7d, err_mae_7d]
+half_life_days: 365
+cqr_calib_days: 90
