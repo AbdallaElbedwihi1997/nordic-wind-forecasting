@@ -1,0 +1,8 @@
+run_id: "001_persistence"
+hypothesis: "sanity floor"
+change: "baseline: persistence of last known actual (D-1 09:00 UTC) + 90-day empirical residual quantiles"
+model: persistence
+params: {}
+feature_set: [last_actual]
+half_life_days: null
+cqr_calib_days: null
