@@ -1,0 +1,8 @@
+run_id: "006_lgbm_cqr90"
+hypothesis: "Wrapping 005's LightGBM in CQR with a 90-day calibration window widens its under-covered intervals (0.69) into the 0.76-0.84 band while keeping mean CRPS at least 1% below 004_linear_qr on at least 3 of 4 folds."
+change: "005_lgbm + CQR (cqr_calib_days 90); relative to 005, not to the current best 004, because 005 is the strongest sharp model and its only failure was coverage (permitted first-lgbm exception)"
+model: lgbm
+params: {}
+feature_set: [da_on, da_off_adj, da_total_adj, ramp_1h, ramp_3h, hour, doy_sin, doy_cos, err_mean_7d, err_mae_7d]
+half_life_days: null
+cqr_calib_days: 90
