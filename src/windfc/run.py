@@ -35,6 +35,8 @@ from windfc.models import CQR, LightGBMQR, LinearQR, Persistence, VendorEmpirica
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FROZEN_FILES = ["src/windfc/evaluate.py", "src/windfc/cutoff.py"]
 HEADER_PREFIX = "# frozen_eval_commit="
+DATA_RELPATH = "data/dk1_hourly.parquet"
+LOG_RELPATH = "experiments/log.csv"
 BUDGET = 20
 TRAIN_START = "2022-01-01"
 TEST_START = pd.Timestamp(TEST_PERIOD[0])
@@ -178,12 +180,18 @@ def _model_columns(feature_set):
 
 
 def decide(result: dict, best: dict | None) -> tuple[str, str]:
-    """Acceptance rule: vs current best, ALL of: mean CRPS ≤ 0.99 × best;
+    """Acceptance rule. With no current best, a candidate becomes the initial
+    best only if 0.76 ≤ coverage ≤ 0.84. Otherwise, vs current best, ALL of: mean CRPS ≤ 0.99 × best;
     CRPS better on ≥ 3 of 4 folds; P50 MAE ≤ 1.01 × best; 0.76 ≤ coverage ≤ 0.84.
     Baseline models are logged as "baseline" and never become best."""
     if result["model"] in BASELINES:
         return "baseline", "baseline model; not eligible as current best"
+    cov = float(result["coverage_mean"])
+    cov_ok = _COV[0] * (1 - _RTOL) <= cov <= _COV[1] * (1 + _RTOL)
+    cov_msg = f"coverage_mean {cov:.3f} outside [0.76, 0.84]"
     if best is None:
+        if not cov_ok:
+            return "rejected", f"{cov_msg} (no current best; initial best needs valid coverage)"
         return "accepted", "initial best"
     fails = []
     crps, bcrps = float(result["crps_mean"]), float(best["crps_mean"])
@@ -197,9 +205,8 @@ def decide(result: dict, best: dict | None) -> tuple[str, str]:
     if not mae <= _MAE_SLACK * bmae * (1 + _RTOL):
         fails.append(f"mae_p50_mean {mae:.4g} > 1.01 x best {bmae:.4g} "
                      f"({100 * (mae / bmae - 1):+.2f}%)")
-    cov = float(result["coverage_mean"])
-    if not (_COV[0] * (1 - _RTOL) <= cov <= _COV[1] * (1 + _RTOL)):
-        fails.append(f"coverage_mean {cov:.3f} outside [0.76, 0.84]")
+    if not cov_ok:
+        fails.append(cov_msg)
     if fails:
         return "rejected", "; ".join(fails)
     return "accepted", (f"crps_mean {crps:.4g} vs {bcrps:.4g} "
@@ -218,8 +225,12 @@ def git_hash() -> str:
     if r.returncode != 0:
         return "unknown"
     h = r.stdout.strip()
-    dirty = _git("status", "--porcelain", "--untracked-files=no").stdout.strip()
-    return h + ("+dirty" if dirty else "")
+    # Tracked changes anywhere except the runner's own log, plus untracked
+    # (non-ignored) files under src/.
+    tracked = _git("status", "--porcelain", "--untracked-files=no", "--",
+                   ".", f":(exclude){LOG_RELPATH}").stdout.strip()
+    untracked = _git("ls-files", "--others", "--exclude-standard", "--", "src").stdout.strip()
+    return h + ("+dirty" if tracked or untracked else "")
 
 
 def _frozen_files_unchanged(commit: str) -> bool:
@@ -281,11 +292,20 @@ def _assert_before_test(index, what: str) -> None:
         )
 
 
-def run_config(cfg: dict, data_path="data/dk1_hourly.parquet", log_path="experiments/log.csv",
-               check_freeze=True) -> dict:
-    """Run one experiment config over all folds, log it and return the result."""
+def default_paths() -> tuple[Path, Path]:
+    """Default (data, log) paths, resolved against the repository root."""
+    return REPO_ROOT / DATA_RELPATH, REPO_ROOT / LOG_RELPATH
+
+
+def run_config(cfg: dict, data_path=None, log_path=None, check_freeze=True) -> dict:
+    """Run one experiment config over all folds, log it and return the result.
+
+    ``data_path`` / ``log_path`` default to ``data/dk1_hourly.parquet`` and
+    ``experiments/log.csv`` under the repository root (not the CWD)."""
     cfg = validate_config(cfg)
-    log_path = Path(log_path)
+    d_data, d_log = default_paths()
+    data_path = d_data if data_path is None else Path(data_path)
+    log_path = d_log if log_path is None else Path(log_path)
 
     # --- log guards (before any heavy work)
     commit = frozen_commit(log_path)
@@ -326,7 +346,8 @@ def run_config(cfg: dict, data_path="data/dk1_hourly.parquet", log_path="experim
     fold_res, preds = [], []
     for i, (a, b) in enumerate(folds, start=1):
         tr = period_mask(X_all.index, TRAIN_START, a - pd.Timedelta(days=1))
-        te = period_mask(X_all.index, a, b) & common
+        in_fold = period_mask(X_all.index, a, b)
+        te = in_fold & common
         Xtr, ytr = complete_rows(X_all.loc[tr, mcols], y_all)
         Xte, yte = X_all.loc[te, mcols], y_all[te]
         _assert_before_test(Xtr.index, f"fold {i} training hours")
@@ -342,8 +363,10 @@ def run_config(cfg: dict, data_path="data/dk1_hourly.parquet", log_path="experim
         s = score(yte, p)
         if s["n_hours"] != len(Xte):
             raise RuntimeError(f"fold {i}: scored {s['n_hours']} hours, expected {len(Xte)}")
+        # n_dropped: fold hours (by delivery day) not scored under the common mask
+        s["n_dropped"] = int(in_fold.sum()) - len(Xte)
         fold_res.append(dict(fold=i, start=str(a.date()), end=str(b.date()),
-                             n_train=len(Xtr), **s))
+                             n_train=len(Xtr), n_fold_hours=int(in_fold.sum()), **s))
         preds.append(p.assign(fold=i, actual_total=yte))
 
     def mean(k):
@@ -380,8 +403,8 @@ def main(argv=None) -> int:
 
     ap = argparse.ArgumentParser(prog="python -m windfc.run", description=__doc__.split("\n")[0])
     ap.add_argument("config", help="experiment config YAML")
-    ap.add_argument("--data", default="data/dk1_hourly.parquet")
-    ap.add_argument("--log", default="experiments/log.csv")
+    ap.add_argument("--data", default=None, help=f"default: <repo>/{DATA_RELPATH}")
+    ap.add_argument("--log", default=None, help=f"default: <repo>/{LOG_RELPATH}")
     args = ap.parse_args(argv)
     cfg = yaml.safe_load(Path(args.config).read_text())
     res = run_config(cfg, data_path=args.data, log_path=args.log)

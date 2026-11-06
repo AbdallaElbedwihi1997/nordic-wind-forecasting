@@ -52,7 +52,15 @@ def test_decide_baseline_and_initial_best():
     for m in ("persistence", "vendor_raw", "vendor_capacity"):
         assert decide(_res([1.0] * 4, model=m), BEST)[0] == "baseline"
         assert decide(_res([1.0] * 4, model=m), None)[0] == "baseline"
-    assert decide(_res([50.0] * 4, cov=0.5), None) == ("accepted", "initial best")
+    assert decide(_res([50.0] * 4, cov=0.80), None) == ("accepted", "initial best")
+
+
+@pytest.mark.parametrize("cov", [0.693, 0.75, 0.85])
+def test_initial_best_requires_coverage(cov):
+    d, reason = decide(_res([50.0] * 4, cov=cov), None)
+    assert d == "rejected" and "coverage" in reason.lower()
+    assert decide(_res([50.0] * 4, cov=0.76), None)[0] == "accepted"
+    assert decide(_res([50.0] * 4, cov=0.84), None)[0] == "accepted"
 
 
 # ---------------------------------------------------------------- runner
@@ -79,6 +87,8 @@ def data_path(tmp_path_factory):
         index=idx,
     )
     df.iloc[5000:5030] = np.nan  # a source gap
+    gap = df.index.get_indexer([pd.Timestamp("2025-06-10 05:00")])[0]
+    df.iloc[gap:gap + 7, df.columns.get_loc("actual_total")] = np.nan  # gap inside fold 1
     test = delivery_day(df.index) >= pd.Timestamp(TEST_PERIOD[0])
     df.loc[test, "actual_total"] = 1e9
     p = tmp_path_factory.mktemp("data") / "synthetic.parquet"
@@ -121,6 +131,11 @@ def test_log_row_appended(data_path, tmp_path):
     assert (delivery_day(p.index) < pd.Timestamp(TEST_PERIOD[0])).all()
     assert p["actual_total"].max() < 1e6
     assert set(p["fold"]) == {1, 2, 3, 4}
+    for f in res["folds"]:
+        # hours of the fold's delivery days that were not scored (gap -> > 0 somewhere)
+        assert f["n_dropped"] >= 0
+        assert f["n_dropped"] + f["n_hours"] == f["n_fold_hours"]
+    assert sum(f["n_dropped"] for f in res["folds"]) > 0
     assert {"q10", "q50", "q90"} <= set(p.columns)
     assert row["crps_f1"] < 1e6
 
@@ -241,3 +256,37 @@ def test_persistence_config_file_valid():
     validate_config(cfg)
     assert cfg["model"] == "persistence" and cfg["feature_set"] == ["last_actual"]
     assert cfg["hypothesis"] == "sanity floor"
+
+
+def test_default_paths_resolve_against_repo_root():
+    import inspect
+
+    from windfc.run import REPO_ROOT, default_paths
+
+    data, log = default_paths()
+    assert data == REPO_ROOT / "data" / "dk1_hourly.parquet"
+    assert log == REPO_ROOT / "experiments" / "log.csv"
+    sig = inspect.signature(run_config)
+    assert sig.parameters["data_path"].default is None
+    assert sig.parameters["log_path"].default is None
+
+
+def test_git_hash_dirty_rules():
+    from windfc.run import REPO_ROOT, git_hash
+
+    base = git_hash()
+    if base.endswith("+dirty") or base == "unknown":
+        pytest.skip("working tree already dirty")
+    log = REPO_ROOT / "experiments" / "log.csv"
+    orig = log.read_bytes()
+    probe = REPO_ROOT / "src" / "windfc" / "_dirty_probe_tmp.py"
+    try:
+        log.write_bytes(orig + b"x\n")  # the runner's own log never marks dirty
+        assert not git_hash().endswith("+dirty")
+        log.write_bytes(orig)
+        probe.write_text("# probe\n")  # untracked file under src/ marks dirty
+        assert git_hash().endswith("+dirty")
+    finally:
+        log.write_bytes(orig)
+        probe.unlink(missing_ok=True)
+    assert git_hash() == base
