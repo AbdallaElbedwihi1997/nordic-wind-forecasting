@@ -1,5 +1,5 @@
 run_id: "001_persistence"
-hypothesis: "sanity floor"
+hypothesis: "Carrying the last known actual forward 15-38 h sets a skill floor that any useful forecast, including the raw vendor, must beat by a wide margin."
 change: "baseline: persistence of last known actual (D-1 09:00 UTC) + 90-day empirical residual quantiles"
 model: persistence
 params: {}
