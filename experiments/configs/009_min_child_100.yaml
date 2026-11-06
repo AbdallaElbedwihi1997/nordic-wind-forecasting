@@ -1,0 +1,8 @@
+run_id: "009_min_child_100"
+hypothesis: "005's raw LightGBM intervals covered only 0.69 out of sample, a sign that default 20-row leaves overfit the tail quantiles; raising min_child_samples to 100 regularizes the leaves and lowers 007's mean CRPS by at least 1% on at least 3 of 4 folds."
+change: "007_hl365 with LightGBM min_child_samples 100 (default 20)"
+model: lgbm
+params: {min_child_samples: 100}
+feature_set: [da_on, da_off_adj, da_total_adj, ramp_1h, ramp_3h, hour, doy_sin, doy_cos, err_mean_7d, err_mae_7d]
+half_life_days: 365
+cqr_calib_days: 90
