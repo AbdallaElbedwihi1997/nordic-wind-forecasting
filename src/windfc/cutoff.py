@@ -1,17 +1,25 @@
 """Day-ahead information cutoff rules and leakage check.
 
+Delivery day D is the Danish local (Europe/Copenhagen) calendar day, matching
+how Energinet issues the vendor day-ahead forecast. All timestamps are tz-naive
+UTC; a delivery day is represented as a tz-naive midnight Timestamp of the local
+date (see ``delivery_day`` / ``delivery_hours``). ``issue_time`` and
+``last_known_hour`` take delivery days, not hours.
+
 "As-of" means the time a value became known:
 - Actuals / ForecastCurrent for hour h become known at h + 1h (see ``known_at``).
 - Vendor ForecastDayAhead values for day D carry as-of = ``issue_time(D)``.
 """
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 FORBIDDEN_COLUMNS = {"ForecastIntraday", "Forecast5Hour", "Forecast1Hour"}
 
 _ISSUE_HOUR = 10
 _LAST_HOUR = 9
+_TZ = "Europe/Copenhagen"
 
 
 class LeakageError(Exception):
@@ -22,13 +30,44 @@ def _day(x):
     return x.normalize()
 
 
+def delivery_day(hours):
+    """Delivery day (Europe/Copenhagen local date) of tz-naive UTC hour(s).
+
+    Returns a tz-naive midnight Timestamp (for a Timestamp) or DatetimeIndex.
+    """
+    if isinstance(hours, pd.Timestamp):
+        return hours.tz_localize("UTC").tz_convert(_TZ).normalize().tz_localize(None)
+    idx = pd.DatetimeIndex(hours)
+    return idx.tz_localize("UTC").tz_convert(_TZ).normalize().tz_localize(None)
+
+
+def delivery_hours(days) -> pd.DatetimeIndex:
+    """All tz-naive UTC hours whose delivery day is in ``days`` (sorted, unique).
+
+    23 hours on the spring-forward day, 25 on the fall-back day, else 24.
+    """
+    if isinstance(days, (pd.Timestamp, str)):
+        days = [days]
+    days = pd.DatetimeIndex(days).normalize().unique().sort_values()
+    if len(days) == 0:
+        return pd.DatetimeIndex([], dtype=days.dtype)
+    # Local midnight is never ambiguous / nonexistent in Europe/Copenhagen.
+    start = days.tz_localize(_TZ).tz_convert("UTC").tz_localize(None)
+    end = (days + pd.Timedelta(days=1)).tz_localize(_TZ).tz_convert("UTC").tz_localize(None)
+    n = ((end - start) // pd.Timedelta(hours=1)).to_numpy().astype(int)
+    offs = np.arange(n.sum()) - np.repeat(np.cumsum(n) - n, n)
+    vals = np.repeat(start.to_numpy(), n) + offs * np.timedelta64(1, "h")
+    return pd.DatetimeIndex(vals).as_unit(days.unit)
+
+
 def issue_time(target_day):
-    """Forecast issue time for day D: D-1 10:00 (Timestamp or DatetimeIndex)."""
+    """Forecast issue time for delivery day D: D-1 10:00 UTC (Timestamp or
+    DatetimeIndex). Map hours to ``delivery_day`` before calling."""
     return _day(target_day) - pd.Timedelta(days=1) + pd.Timedelta(hours=_ISSUE_HOUR)
 
 
 def last_known_hour(target_day):
-    """Last actual hour usable for day D: D-1 09:00."""
+    """Last actual hour usable for delivery day D: D-1 09:00 UTC."""
     return _day(target_day) - pd.Timedelta(days=1) + pd.Timedelta(hours=_LAST_HOUR)
 
 
@@ -52,7 +91,7 @@ def check_features(feature_asof: pd.DataFrame, target_index: pd.DatetimeIndex) -
     if bad_names:
         raise LeakageError(f"Forbidden feature column(s): {bad_names}")
 
-    limit = issue_time(target_index)
+    limit = issue_time(delivery_day(target_index))
     bad_cols = []
     first_bad = None
     for c in feature_asof.columns:
@@ -65,5 +104,5 @@ def check_features(feature_asof: pd.DataFrame, target_index: pd.DatetimeIndex) -
     if bad_cols:
         raise LeakageError(
             f"Feature column(s) {bad_cols} have as-of after issue time "
-            f"(D-1 10:00); first offending target hour: {first_bad}"
+            f"(delivery day D-1 10:00 UTC); first offending target hour: {first_bad}"
         )

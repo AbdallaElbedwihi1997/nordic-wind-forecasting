@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from windfc.capacity import apply_capacity_correction, capacity_ratio
-from windfc.cutoff import issue_time, last_known_hour
+from windfc.cutoff import delivery_day, issue_time, last_known_hour
 from windfc.evaluate import FOLDS
 from windfc.features import (
     BASE_FEATURES,
@@ -60,11 +60,12 @@ def test_shape_and_expansion():
     X, asof = build_features(df, days, ["da_on", "level_x_hour", "hour"])
     assert list(X.columns) == ["da_on", "level_x_hour_sin", "level_x_hour_cos", "hour"]
     assert len(X) == 72
-    assert X.index.equals(pd.date_range("2026-03-01", periods=72, freq="h"))
+    # delivery days 03-01..03-03 (CET) = UTC 2026-02-28 23:00 .. 2026-03-03 22:00
+    assert X.index.equals(pd.date_range("2026-02-28 23:00", periods=72, freq="h"))
     assert asof.index.equals(X.index) and list(asof.columns) == list(X.columns)
     assert asof["hour"].isna().all()
-    assert (asof["da_on"] == issue_time(X.index)).all()
-    assert X["hour"].tolist()[:24] == list(range(24))
+    assert (asof["da_on"] == issue_time(delivery_day(X.index))).all()
+    assert X["hour"].tolist()[:24] == [23] + list(range(23))
     h = X.index.hour.to_numpy()
     np.testing.assert_allclose(
         X["level_x_hour_sin"], df.loc[X.index, "da_total"] * np.sin(2 * np.pi * h / 24)
@@ -81,7 +82,7 @@ def test_ramps_within_day():
     days = _day_range("2026-03-01", "2026-03-02")
     X, _ = build_features(df, days, ["da_total_adj", "ramp_1h", "ramp_3h"])
     full = apply_capacity_correction(
-        df, capacity_ratio(df, df.index.normalize().unique())
+        df, capacity_ratio(df, delivery_day(df.index).unique())
     )["da_total_adj"]
     for t in X.index:
         assert X.loc[t, "ramp_1h"] == pytest.approx(
@@ -102,8 +103,9 @@ def test_calendar_and_off_share():
     X, _ = build_features(df, _day_range("2026-03-01", "2026-03-01"),
                           ["doy_sin", "doy_cos", "off_share"])
     doy = 60
-    assert X["doy_sin"].iloc[0] == pytest.approx(np.sin(2 * np.pi * doy / 365.25))
-    assert X["doy_cos"].iloc[0] == pytest.approx(np.cos(2 * np.pi * doy / 365.25))
+    t0 = pd.Timestamp("2026-03-01 00:00")
+    assert X.loc[t0, "doy_sin"] == pytest.approx(np.sin(2 * np.pi * doy / 365.25))
+    assert X.loc[t0, "doy_cos"] == pytest.approx(np.cos(2 * np.pi * doy / 365.25))
     assert np.isnan(X.loc["2026-03-01 05:00", "off_share"])
     t = pd.Timestamp("2026-03-01 06:00")
     assert X.loc[t, "off_share"] == pytest.approx(df.loc[t, "da_off"] / df.loc[t, "da_total"])
@@ -151,7 +153,7 @@ def test_err_values_and_by_hour():
     for hh in (0, 9, 10, 23):
         sub = w30[w30.index.hour == hh]
         assert len(sub) == 30
-        t = D + pd.Timedelta(hours=hh)
+        t = X.index[X.index.hour == hh][0]  # the row of D with this UTC hour
         assert X.loc[t, "err_by_hour_30d"] == pytest.approx(sub.mean())
         assert asof.loc[t, "err_by_hour_30d"] == sub.index.max() + pd.Timedelta(hours=1)
     assert (X["last_actual"] == df.loc[L, "actual_total"]).all()
@@ -177,7 +179,7 @@ def test_nan_actuals_skipped_and_kept():
     assert X["err_mean_7d"].isna().all()
     assert asof["err_mean_7d"].isna().all()
     assert X["err_mean_14d"].notna().all()
-    assert (asof["err_mean_14d"] <= issue_time(X.index)).all()
+    assert (asof["err_mean_14d"] <= issue_time(delivery_day(X.index))).all()
 
 
 def test_future_perturbation_invariance_real_data():
@@ -188,7 +190,7 @@ def test_future_perturbation_invariance_real_data():
     after = bad.index > last_known_hour(D)
     for c in ["actual_on", "actual_off", "actual_total", "cur_on", "cur_off"]:
         bad.loc[after, c] = 12345.0
-    later_days = bad.index >= D + pd.Timedelta(days=1)
+    later_days = delivery_day(bad.index) > D
     for c in ["da_on", "da_off", "da_total"]:
         bad.loc[later_days, c] = 777.0
     X1, _ = build_features(bad, _day_range(D, D), ALL)
@@ -201,7 +203,7 @@ def test_build_features_passes_leakage_check():
     days = _day_range(a, b)
     X, asof = build_features(df, days, ALL)
     assert len(X) == 24 * len(days)
-    lim = issue_time(X.index)
+    lim = issue_time(delivery_day(X.index))
     for c in asof.columns:
         s = asof[c]
         assert ((s <= lim) | s.isna()).all(), c
@@ -215,3 +217,20 @@ def test_complete_rows():
     X2, y2 = complete_rows(X, y)
     assert list(X2.index) == [idx[0], idx[3]]
     assert y2.index.equals(X2.index)
+
+
+def test_features_rows_are_local_day():
+    df = pd.read_parquet(PARQUET)
+    D = pd.Timestamp("2025-06-10")
+    X0, asof = build_features(df, _day_range(D, D), ALL)
+    assert X0.index.equals(pd.date_range("2025-06-09 22:00", "2025-06-10 21:00", freq="h"))
+    assert (delivery_day(X0.index) == D).all()
+    bad = df.copy()
+    after = bad.index > last_known_hour(D)
+    for c in ["actual_on", "actual_off", "actual_total", "cur_on", "cur_off"]:
+        bad.loc[after, c] = 12345.0
+    later_days = delivery_day(bad.index) > D
+    for c in ["da_on", "da_off", "da_total"]:
+        bad.loc[later_days, c] = 777.0
+    X1, _ = build_features(bad, _day_range(D, D), ALL)
+    pd.testing.assert_frame_equal(X0, X1)

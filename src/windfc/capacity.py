@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from windfc.cutoff import last_known_hour
+from windfc.cutoff import delivery_day, last_known_hour
 
 
 def capacity_ratio(
@@ -17,10 +17,11 @@ def capacity_ratio(
     window_days: int = 30,
     min_cur_off: float = 100.0,
 ) -> pd.Series:
-    """Trailing offshore capacity ratio per target day.
+    """Trailing offshore capacity ratio per target delivery day.
 
-    For day D the window is the hours in (last_known_hour(D) - window_days,
-    last_known_hour(D)]. Only hours with ``cur_off > min_cur_off`` and both
+    ``target_days`` are delivery days (Danish local dates, see
+    ``windfc.cutoff.delivery_day``). For day D the window is the hours in
+    (last_known_hour(D) - window_days, last_known_hour(D)]. Only hours with ``cur_off > min_cur_off`` and both
     ``actual_off`` and ``cur_off`` non-NaN count. ratio = sum(actual_off) /
     sum(cur_off). With no qualifying hours, the most recent valid ratio of an
     earlier day (from the full daily history, independent of the requested days) is used, else 1.0. The result is always finite.
@@ -29,7 +30,7 @@ def capacity_ratio(
         raise ValueError("df index must be monotonic increasing")
     days = pd.DatetimeIndex(target_days).normalize()
     # Full daily sequence so the fallback never depends on which days were requested.
-    start = min(df.index[0].normalize(), days.min())
+    start = min(delivery_day(df.index[0]), days.min())
     uniq = pd.date_range(start, days.max(), freq="D")
 
     cur = df["cur_off"].to_numpy(dtype=float)
@@ -60,15 +61,15 @@ def capacity_ratio(
 def apply_capacity_correction(df: pd.DataFrame, ratios: pd.Series) -> pd.DataFrame:
     """Return a copy of ``df`` with ``da_off_adj`` and ``da_total_adj`` added.
 
-    ``da_off_adj = ratio(day of hour) * da_off``; ``da_total_adj = da_on +
-    da_off_adj`` (NaN if either part is NaN). Hours whose day has no ratio get
-    NaN. ``da_on`` is unchanged.
+    ``da_off_adj = ratio(delivery day of hour) * da_off``; ``da_total_adj =
+    da_on + da_off_adj`` (NaN if either part is NaN). Hours whose delivery day
+    has no ratio get NaN. ``da_on`` is unchanged.
     """
     out = df.copy()
     r = ratios.copy()
     r.index = pd.DatetimeIndex(r.index).normalize()
     r = r[~r.index.duplicated(keep="last")]
-    per_hour = r.reindex(df.index.normalize()).to_numpy(dtype=float)
+    per_hour = r.reindex(delivery_day(df.index)).to_numpy(dtype=float)
     out["da_off_adj"] = per_hour * out["da_off"].to_numpy(dtype=float)
     out["da_total_adj"] = out["da_on"] + out["da_off_adj"]
     return out

@@ -11,8 +11,11 @@ As-of conventions:
 
 Error statistics use the capacity-corrected vendor error
 ``e(h) = da_total_adj(h) - actual_total(h)``, each historical hour corrected
-with its own day's capacity ratio, restricted to hours in
+with its own delivery day's capacity ratio, restricted to hours in
 ``(last_known_hour(D) - N days, last_known_hour(D)]``.
+
+"Day" always means delivery day (Danish local date, ``cutoff.delivery_day``);
+rows for day D are ``cutoff.delivery_hours(D)`` (23/24/25 tz-naive UTC hours).
 """
 from __future__ import annotations
 
@@ -20,7 +23,14 @@ import numpy as np
 import pandas as pd
 
 from windfc.capacity import apply_capacity_correction, capacity_ratio
-from windfc.cutoff import check_features, issue_time, known_at, last_known_hour
+from windfc.cutoff import (
+    check_features,
+    delivery_day,
+    delivery_hours,
+    issue_time,
+    known_at,
+    last_known_hour,
+)
 
 BASE_FEATURES = [
     "da_on",
@@ -83,7 +93,7 @@ def _window_stats(values: np.ndarray, times: pd.DatetimeIndex, hi_time, lo_time)
 
 
 def build_features(df: pd.DataFrame, target_days, feature_set: list[str]):
-    """Features and as-of stamps for all 24 hours of each target day.
+    """Features and as-of stamps for all hours of each target delivery day.
 
     Returns ``(X, asof)`` with identical index (tz-naive UTC hours) and columns.
     ``level_x_hour`` expands to ``level_x_hour_sin`` / ``level_x_hour_cos``.
@@ -96,14 +106,12 @@ def build_features(df: pd.DataFrame, target_days, feature_set: list[str]):
         raise ValueError("df index must be sorted and unique")
 
     days = pd.DatetimeIndex(target_days).normalize().unique().sort_values()
-    idx = pd.DatetimeIndex(
-        (days.to_numpy()[:, None] + (np.arange(24) * np.timedelta64(1, "h"))[None, :]).ravel()
-    ).as_unit(df.index.unit)
+    idx = delivery_hours(days).as_unit(df.index.unit)
     idx.name = df.index.name
 
-    # Capacity ratio for every day of the history (so historical errors use
-    # their own day's ratio) plus the target days.
-    all_days = df.index.normalize().unique().union(days)
+    # Capacity ratio for every delivery day of the history (so historical
+    # errors use their own delivery day's ratio) plus the target days.
+    all_days = delivery_day(df.index).unique().union(days)
     ratios = capacity_ratio(df, all_days)
     hist = apply_capacity_correction(df, ratios)
     # Vendor columns at target hours (reindex: target hours outside df -> NaN)
@@ -111,10 +119,11 @@ def build_features(df: pd.DataFrame, target_days, feature_set: list[str]):
     vend = hist[["da_on", "da_off", "da_total", "da_off_adj", "da_total_adj"]]
     vend = vend.reindex(full_idx)
 
-    issue = issue_time(idx)
+    dday = delivery_day(idx)
+    issue = issue_time(dday)
     nat = pd.DatetimeIndex([pd.NaT] * len(idx), dtype=issue.dtype)
     hours = idx.hour.to_numpy()
-    lk = last_known_hour(idx)
+    lk = last_known_hour(dday)
 
     e = (hist["da_total_adj"] - hist["actual_total"]).to_numpy(dtype=float)
     etimes = hist.index

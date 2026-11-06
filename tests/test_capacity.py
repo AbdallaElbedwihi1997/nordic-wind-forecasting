@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from windfc.capacity import apply_capacity_correction, capacity_ratio
+from windfc.cutoff import delivery_day
 
 PARQUET = Path(__file__).resolve().parents[1] / "data" / "dk1_hourly.parquet"
 
@@ -103,9 +104,11 @@ def test_correction_scales_offshore_only():
     )
     out = apply_capacity_correction(df, ratios)
     assert "da_off_adj" not in df.columns  # input untouched
-    d1 = out.index.normalize() == pd.Timestamp("2026-01-01")
-    d2 = out.index.normalize() == pd.Timestamp("2026-01-02")
-    d3 = out.index.normalize() == pd.Timestamp("2026-01-03")
+    dd = delivery_day(out.index)  # e.g. UTC 2026-01-01 23:00 -> delivery 2026-01-02
+    d1 = dd == pd.Timestamp("2026-01-01")
+    d2 = dd == pd.Timestamp("2026-01-02")
+    d3 = dd == pd.Timestamp("2026-01-03")
+    assert out.loc["2026-01-01 23:00", "da_off_adj"] == 800.0
     assert (out.loc[d2, "da_off_adj"] == 800.0).all()
     assert out.loc[d1, "da_off_adj"].iloc[0] == 600.0
     assert np.isnan(out["da_off_adj"].iloc[5]) and np.isnan(out["da_total_adj"].iloc[5])

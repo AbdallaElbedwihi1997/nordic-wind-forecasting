@@ -7,10 +7,11 @@ import pandas as pd
 from scipy import stats
 
 from windfc import QUANTILES
+from windfc.cutoff import delivery_day
 
 QCOLS = [f"q{int(round(q * 100))}" for q in QUANTILES]
 
-# Inclusive whole UTC days.
+# Inclusive delivery days (Danish local calendar days, see cutoff.delivery_day).
 FOLDS = [
     ("2025-05-01", "2025-07-31"),
     ("2025-08-01", "2025-10-31"),
@@ -21,11 +22,11 @@ TEST_PERIOD = ("2026-05-01", "2026-10-28")
 
 
 def period_mask(index, start, end) -> np.ndarray:
-    """Boolean mask for start 00:00 <= t < (end + 1 day) 00:00."""
-    index = pd.DatetimeIndex(index)
-    lo = pd.Timestamp(start)
-    hi = pd.Timestamp(end) + pd.Timedelta(days=1)
-    return np.asarray((index >= lo) & (index < hi))
+    """Boolean mask for start <= delivery_day(t) <= end (tz-naive UTC hours)."""
+    dd = delivery_day(pd.DatetimeIndex(index))
+    lo = pd.Timestamp(start).normalize()
+    hi = pd.Timestamp(end).normalize()
+    return np.asarray((dd >= lo) & (dd <= hi))
 
 
 def _aligned(y: pd.Series, preds: pd.DataFrame):
@@ -70,9 +71,9 @@ def score(y: pd.Series, preds: pd.DataFrame) -> dict:
 
 
 def diebold_mariano(loss_a: pd.Series, loss_b: pd.Series, h: int = 1):
-    """HLN-corrected DM test on daily mean losses; negative stat => a better."""
+    """HLN-corrected DM test on delivery-day mean losses; negative stat => a better."""
     df = pd.concat([loss_a, loss_b], axis=1, join="inner").dropna()
-    daily = df.groupby(df.index.normalize()).mean()
+    daily = df.groupby(delivery_day(df.index)).mean()
     d = (daily.iloc[:, 0] - daily.iloc[:, 1]).to_numpy()
     n = len(d)
     if n < 2:

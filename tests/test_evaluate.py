@@ -85,8 +85,10 @@ def test_folds_do_not_overlap_or_touch_test():
 def test_period_mask_inclusive_whole_days():
     idx = pd.date_range("2025-04-30 22:00", "2025-08-01 02:00", freq="h")
     m = period_mask(idx, "2025-05-01", "2025-07-31")
-    assert idx[m][0] == pd.Timestamp("2025-05-01 00:00")
-    assert idx[m][-1] == pd.Timestamp("2025-07-31 23:00")
+    # delivery days (CEST, UTC+2): 2025-05-01 local 00:00 = UTC 2025-04-30 22:00
+    assert idx[m][0] == pd.Timestamp("2025-04-30 22:00")
+    assert idx[m][-1] == pd.Timestamp("2025-07-31 21:00")
+    assert m.sum() == 24 * 92
 
 
 def test_dm_identical_losses():
@@ -104,3 +106,10 @@ def test_dm_clearly_better():
     assert stat < 0 and p < 0.05
     stat2, p2 = diebold_mariano(a, b, h=2)
     assert stat2 < 0 and p2 < 0.05
+
+
+def test_period_mask_delivery_day():
+    a, b = FOLDS[0]
+    idx = pd.DatetimeIndex(["2025-04-30 21:00", "2025-04-30 22:00", "2025-07-31 21:00", "2025-07-31 22:00"])
+    m = period_mask(idx, a, b)
+    assert m.tolist() == [False, True, True, False]
