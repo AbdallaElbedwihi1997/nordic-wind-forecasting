@@ -1,0 +1,8 @@
+run_id: "002_vendor_raw"
+hypothesis: "The raw vendor day-ahead total, with level-binned 90-day empirical error quantiles, beats persistence by a wide margin but carries a large negative bias from uncovered offshore capacity."
+change: "baseline: vendor DA total (da_total) + 90-day empirical error quantiles in 5 forecast-level bins"
+model: vendor_raw
+params: {}
+feature_set: [da_total]
+half_life_days: null
+cqr_calib_days: null
