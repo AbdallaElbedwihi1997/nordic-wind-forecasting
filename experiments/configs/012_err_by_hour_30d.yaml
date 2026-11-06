@@ -1,0 +1,8 @@
+run_id: "012_err_by_hour_30d"
+hypothesis: "007's P50 residuals show a diurnal pattern the static hour feature does not remove (over-forecast 08-15 UTC, under-forecast at night, roughly +/-60 MW), so adding the 30-day vendor error for the same hour of day lowers mean CRPS by at least 1% on at least 3 of 4 folds."
+change: "007_hl365 + feature err_by_hour_30d"
+model: lgbm
+params: {}
+feature_set: [da_on, da_off_adj, da_total_adj, ramp_1h, ramp_3h, hour, doy_sin, doy_cos, err_mean_7d, err_mae_7d, err_by_hour_30d]
+half_life_days: 365
+cqr_calib_days: 90
