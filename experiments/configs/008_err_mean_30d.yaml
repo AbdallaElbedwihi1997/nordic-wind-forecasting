@@ -1,0 +1,8 @@
+run_id: "008_err_mean_30d"
+hypothesis: "Adding the 30-day mean vendor error gives the model a less noisy estimate of the persistent vendor bias than the 7-day mean alone, reducing the large fold-3 under-forecast (bias -104 MW) and lowering mean CRPS by at least 1% on at least 3 of 4 folds."
+change: "007_hl365 + feature err_mean_30d"
+model: lgbm
+params: {}
+feature_set: [da_on, da_off_adj, da_total_adj, ramp_1h, ramp_3h, hour, doy_sin, doy_cos, err_mean_7d, err_mae_7d, err_mean_30d]
+half_life_days: 365
+cqr_calib_days: 90
