@@ -1,0 +1,8 @@
+run_id: "003_vendor_capacity"
+hypothesis: "Scaling the vendor offshore DA by the trailing 30-day actual/current offshore ratio removes most of the negative bias and lowers CRPS versus the raw vendor on most folds."
+change: "baseline: capacity-corrected vendor DA total (da_total_adj, step 1) + 90-day empirical error quantiles in 5 forecast-level bins"
+model: vendor_capacity
+params: {}
+feature_set: [da_total_adj]
+half_life_days: null
+cqr_calib_days: null
