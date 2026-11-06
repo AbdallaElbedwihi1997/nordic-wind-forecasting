@@ -255,7 +255,7 @@ def test_persistence_config_file_valid():
     cfg = yaml.safe_load((REPO_ROOT / "experiments/configs/001_persistence.yaml").read_text())
     validate_config(cfg)
     assert cfg["model"] == "persistence" and cfg["feature_set"] == ["last_actual"]
-    assert cfg["hypothesis"] == "sanity floor"
+    assert cfg["hypothesis"].startswith("Carrying the last known actual forward")
 
 
 def test_default_paths_resolve_against_repo_root():
