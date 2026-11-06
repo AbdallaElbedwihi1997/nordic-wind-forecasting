@@ -1,2 +1,3 @@
 # frozen_eval_commit=1b685ed11d837eab6f257ee4021c7ed50aecfde7
 run_id,timestamp,git_hash,hypothesis,change,model,crps_f1,crps_f2,crps_f3,crps_f4,crps_mean,mae_p50_mean,coverage_mean,bias_mean,n_hours,decision,reason
+001_persistence,2026-11-06T23:28:58Z,fd7e289ad68295ccc33ae0cf4539ae8c9791ddf8,"Carrying the last known actual forward 15-38 h sets a skill floor that any useful forecast, including the raw vendor, must beat by a wide margin.",baseline: persistence of last known actual (D-1 09:00 UTC) + 90-day empirical residual quantiles,persistence,347.25167676,366.117450607,513.364309928,424.288209237,412.755411633,1068.24782403,0.791606542694,-28.3186627692,8580,baseline,baseline model; not eligible as current best
