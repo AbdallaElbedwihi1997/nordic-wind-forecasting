@@ -1,0 +1,8 @@
+run_id: "004_linear_qr"
+hypothesis: "Linear quantile regression on the capacity-corrected vendor features, ramps, calendar and trailing error stats improves CRPS over the empirical vendor baseline by learning level-dependent spread and residual bias."
+change: "linear quantile regression (alpha 0, default stride subsample) on BASE_FEATURES"
+model: linear_qr
+params: {}
+feature_set: [da_on, da_off_adj, da_total_adj, ramp_1h, ramp_3h, hour, doy_sin, doy_cos, err_mean_7d, err_mae_7d]
+half_life_days: null
+cqr_calib_days: null
