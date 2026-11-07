@@ -28,10 +28,12 @@ What this says:
 
 - **The model's validation gain reversed on test.** It lost to the raw vendor in May and July–September
   (+3% to +23% by month) and won in June (−2%) and October (−14%). The errors sit in high-output hours: in the top
-  quintile of its P50, coverage is 0.63 and the mean residual is −377 MWh. Likely cause (a hypothesis, not tested
-  in the notebooks): offshore output in the test period rose above the training range, and a tree model does not
-  extrapolate beyond the range it was trained on, while the linear capacity rescaling does. The validation folds
-  contain no comparable capacity step, so the loop could not detect this.
+  quintile of its P50, coverage is 0.63 and the mean residual is −377 MWh. Likely cause, supported by a post-hoc
+  diagnostic but not proven (notebook 05 §6): offshore output rose above the training range, and a tree model does
+  not extrapolate beyond it, while the linear capacity rescaling does. In 19.5% of test hours the corrected offshore
+  forecast is above its training maximum. On those hours the final model's CRPS is 21% worse than the raw vendor.
+  On the other hours it is level with the raw vendor (−0.3%), though still 4.3% worse than step 1. The validation
+  folds contain no comparable capacity step, so the loop could not detect this.
 - **The capacity correction (step 1).** As a point forecast it removes the vendor's test-period DA bias (−460 →
   +2 MWh) and cuts DA MAE by 41% (537 → 316 MWh). In the probabilistic baseline it cut CRPS by 4.5% on test, but
   the difference is not significant. On validation it made CRPS slightly worse than the raw vendor on all 4 folds
@@ -101,9 +103,13 @@ Details: [notebook 04](notebooks/04_optimization_log.ipynb).
   narrow in windy hours, on validation and on test.
 - The final model under-forecasts: P50 bias −32 MWh on validation (fold mean) and −164 MWh on test.
 - All selection was adaptive on the same 4 validation folds (one year); none contains a capacity step like the test.
+- The final model does not extrapolate beyond its training range. 19.5% of test hours had offshore forecasts above
+  the training maximum, and those hours drive most of its test loss (post-hoc diagnostic, notebook 05 §6).
 - Disclosure: on 2026-11-06, while designing the project and before the split was fixed, the author looked at
   yearly and quarterly vendor bias and offshore maxima that included the 2026 test months. Apart from that, the
   test period was not inspected before notebook 05.
+
+**Future work:** a capacity-normalised target (predict capacity factor, not MWh), and a forward test on data after 2026-10-28.
 
 ## Reproduce
 
