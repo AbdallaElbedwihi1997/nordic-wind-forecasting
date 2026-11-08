@@ -27,8 +27,9 @@ recorded in git, and the metrics are at the end.
 ### What the DK1 data showed
 
 **The short version:** the vendor's own forecast had fallen behind new offshore capacity; its forecasts follow the
-Danish local day; and a machine-learning model that looked better on validation lost on a locked test period, while a
-simple capacity correction of the vendor forecast won.
+Danish local day; and a machine-learning model that looked better on validation lost on a locked test period. What won
+was a simple fix: scaling the vendor's offshore forecast up by the recent ratio of actual to vendor output, to make up
+for the capacity it was missing.
 
 **1. The vendor forecast does not cover new offshore capacity.**
 
@@ -54,7 +55,8 @@ has no price data, so that cost is inferred, not measured.
 
 **4. A model that wins on validation can lose when the market changes.** The final machine-learning model was 10%
 better than the vendor on validation and worse on the locked test period. Offshore capacity kept growing, and a tree
-model cannot predict beyond the range it was trained on. The simple capacity rescaling adapted and did best. A
+model cannot predict beyond the range it was trained on. The simple capacity rescaling (multiplying the vendor's offshore forecast by the last 30 days' ratio of actual to
+vendor output) grows with capacity, so it adapted and did best. A
 forecasting setup needs a locked test period and a check for structural change before anyone trusts it.
 
 ### Coming from freight
