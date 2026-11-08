@@ -1,14 +1,10 @@
 # Learning the Nordic day-ahead wind market: an AI-assisted DK1 project
 
-> **What this is.** An AI-assisted project I ran to understand how day-ahead wind power is forecast and traded in
-> the Nordics, coming from freight-rate forecasting. I defined the questions and the evaluation rules (locked test
-> period, fixed metrics, acceptance thresholds, run budget); AI coding agents wrote the code and ran the experiment
-> loop within those rules. The goal was to understand the market, not to ship a production model. Every decision is
-> recorded in git, and the metrics are at the end.
-
-**The short version:** the vendor's own forecast had fallen behind new offshore capacity; its forecasts follow the
-Danish local day; and a machine-learning model that looked better on validation lost on a locked test period, while a
-simple capacity correction of the vendor forecast won.
+**What this is.** An AI-assisted project I ran to understand how day-ahead wind power is forecast and traded in
+the Nordics, coming from freight-rate forecasting. I defined the questions and the evaluation rules (locked test
+period, fixed metrics, acceptance thresholds, run budget); AI coding agents wrote the code and ran the experiment
+loop within those rules. The goal was to understand the market, not to ship a production model. Every decision is
+recorded in git, and the metrics are at the end.
 
 ## What I learned about the market
 
@@ -29,6 +25,10 @@ simple capacity correction of the vendor forecast won.
   needs both output and price forecasts.
 
 ### What the DK1 data showed
+
+**The short version:** the vendor's own forecast had fallen behind new offshore capacity; its forecasts follow the
+Danish local day; and a machine-learning model that looked better on validation lost on a locked test period, while a
+simple capacity correction of the vendor forecast won.
 
 **1. The vendor forecast does not cover new offshore capacity.**
 
