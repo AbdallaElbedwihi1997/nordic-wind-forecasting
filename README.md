@@ -8,6 +8,8 @@ the system operator's public vendor forecast and judged against that vendor on a
 The simplest fix, rescaling the vendor's offshore forecast for missing capacity, did best on test. Below are the
 findings, the protocol, and why the validation gain did not carry over.
 
+> **How this was built.** This is an AI-assisted project. I defined the question and the evaluation rules (locked test period, fixed metrics, acceptance thresholds, run budget); AI coding agents wrote the code and ran the experiment loop within those rules. The single test look and every decision in the experiment log are recorded in git.
+
 ## Headline: locked test period
 
 Delivery days 2026-05-01 → 2026-10-28, 4,294 scored hours (51 dropped by the common data mask, the same for all
