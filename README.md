@@ -1,16 +1,99 @@
-# DK1 day-ahead wind power forecasting
+# Learning the Nordic day-ahead wind market: an AI-assisted DK1 project
 
-Probabilistic day-ahead forecasts (9 quantiles) of total wind output in Danish price area DK1. They are built on top of
-the system operator's public vendor forecast and judged against that vendor on a test period that was scored once.
+> **What this is.** An AI-assisted project I ran to understand how day-ahead wind power is forecast and traded in
+> the Nordics, coming from freight-rate forecasting. I defined the questions and the evaluation rules (locked test
+> period, fixed metrics, acceptance thresholds, run budget); AI coding agents wrote the code and ran the experiment
+> loop within those rules. The goal was to understand the market, not to ship a production model. Every decision is
+> recorded in git, and the metrics are at the end.
 
-**Result in one line.** On the locked test period (May–Oct 2026) the final model is **worse** than the vendor: CRPS
-+5.4% against the raw vendor baseline and +10.4% against the capacity-corrected vendor. On validation it was 10.3% better.
-The simplest fix, rescaling the vendor's offshore forecast for missing capacity, did best on test. Below are the
-findings, the protocol, and why the validation gain did not carry over.
+**The short version:** the vendor's own forecast had fallen behind new offshore capacity; its forecasts follow the
+Danish local day; and a machine-learning model that looked better on validation lost on a locked test period, while a
+simple capacity correction of the vendor forecast won.
 
-> **How this was built.** This is an AI-assisted project. I defined the question and the evaluation rules (locked test period, fixed metrics, acceptance thresholds, run budget); AI coding agents wrote the code and ran the experiment loop within those rules. The single test look and every decision in the experiment log are recorded in git.
+## What I learned about the market
 
-## Headline: locked test period
+### How wind power is sold
+
+- **Most wind farm owners don't sell their own power.** They hand it to route-to-market companies or sign power
+  purchase agreements (PPAs). Whoever takes the output also takes the forecasting and imbalance risk.
+- **Day-ahead.** Tomorrow's output is sold in Nord Pool's day-ahead auction. Bids close at 12:00 CET the day before,
+  and each bidding zone (DK1, NO1, SE3, …) gets one clearing price per slot. Since delivery day 1 October 2025 the
+  European day-ahead market trades 15-minute slots instead of hours.
+- **Intraday and imbalance.** As weather forecasts update, positions are corrected on the intraday market until
+  shortly before delivery. Whatever is still off is settled with the grid operator (Energinet in Denmark) at the
+  imbalance price.
+- **Errors are correlated.** Wind producers in an area are wrong in the same direction at the same time. When
+  everyone's wind under-delivers, the system is short and balancing power is expensive. So the costly errors are
+  concentrated in windy hours and ramps, and a forecast that is good on average can still lose money.
+- **Output and price go together.** When it is windy everywhere, prices fall and can turn negative. A wind portfolio
+  needs both output and price forecasts.
+
+### What the DK1 data showed
+
+**1. The vendor forecast does not cover new offshore capacity.**
+
+![DK1 offshore: monthly maximum hourly output, actual vs vendor](docs/figures/vendor_offshore_gap.png)
+
+From 2024 onwards actual offshore peaks rise to 1,500–1,650 MWh (to April 2026). The vendor's offshore forecasts,
+both day-ahead and its latest `ForecastCurrent`, stay capped near 1,000–1,150 MWh, so new capacity is missing from
+the vendor model. Over the same period the vendor's day-ahead total bias grows from −12 MWh (2022) to −436 MWh
+(Jan–Apr 2026). The offshore gap is not the whole story: in 2024–2026 the **onshore** bias makes up roughly 40–55%
+of the total, and its cause is not diagnosed here
+([notebook 01](notebooks/01_data_and_vendor_diagnosis.ipynb)). On the test period the raw DA total bias is −460 MWh.
+
+**2. The vendor's day-ahead forecast is issued per Danish local day.**
+
+The vendor DA series jumps where one issue ends and the next begins. That happens at **local** midnight (median
+step 125–190 MWh vs 50–65 MWh at other hours), at 23:00 UTC in winter and at 22:00 UTC in summer. So every "day" in
+this project is a Danish local delivery day (23 or 25 hours on DST change days). With UTC days, the last 1–2 hours
+of each day would come from a vendor forecast issued after the forecast's own issue time: a look-ahead leak.
+
+**3. Forecasts fail most in high-output hours.** My model's largest errors were in high-output hours (in the top
+fifth of its forecasts, the mean error was −377 MWh on the test period). Given the correlated-error point above, those are likely the most expensive hours to get wrong. This project
+has no price data, so that cost is inferred, not measured.
+
+**4. A model that wins on validation can lose when the market changes.** The final machine-learning model was 10%
+better than the vendor on validation and worse on the locked test period. Offshore capacity kept growing, and a tree
+model cannot predict beyond the range it was trained on. The simple capacity rescaling adapted and did best. A
+forecasting setup needs a locked test period and a check for structural change before anyone trusts it.
+
+### Coming from freight
+
+Freight rates have little seasonality to lean on and have faced repeated shocks over the last five years. Wind power
+is driven by weather and by step changes in installed capacity. In both markets the work starts with data quality and
+reliability, and the hard part is recognising when a model has stopped describing the market.
+
+## Method and leakage controls
+
+- **Setting.** Issue time D−1 10:00 UTC for all hours of local day D. Inputs: vendor `ForecastDayAhead` for D;
+  actuals and `ForecastCurrent` up to 09:00 UTC on D−1; calendar. Vendor intraday and `ForecastCurrent` for day D
+  are never features.
+- **Leakage check.** Every feature has an as-of timestamp. `windfc.cutoff.check_features` raises if any feature
+  uses data from after the issue time, and every run goes through it (tested).
+- **Models.** Step 1 scales the vendor offshore DA by the trailing 30-day actual / `ForecastCurrent` offshore
+  ratio. The baselines add 90-day empirical error quantiles to a vendor anchor. The final model is LightGBM
+  quantile regression on the corrected vendor forecasts, ramps, calendar and 7-day vendor error statistics, with
+  365-day recency weighting and conformal calibration (CQR, 90-day window).
+- **Frozen evaluation.** `evaluate.py` (metrics, folds, DM) and `cutoff.py` were committed at `1b685ed` before run
+  001. The runner refuses to run if they differ, and the acceptance rule `decide()` was fixed before run 001
+  (`d61f8b5`). All models are scored on the same hours.
+- **Locked test.** The runner rejects configs and hours on or after 2026-05-01. Notebooks 01–04 read only earlier
+  delivery days. The test period was scored once, by `windfc.final.score_test` in notebook 05. No model,
+  config or code was changed after the results were seen.
+
+## Optimization log
+
+[`experiments/log.csv`](experiments/log.csv) holds 12 runs: 3 baselines, `004_linear_qr` as initial best, then 2
+accepted changes (006: LightGBM + CQR; 007: 365-day recency weighting) and 6 rejections (005 for under-coverage;
+008–012). An acceptance needed ≥1% lower mean CRPS, a gain on ≥3 of 4 folds, P50 MAE no more than 1% worse, and
+coverage in 0.76–0.84. Five rejections in a row triggered the pre-declared stop rule, after 7 of 15 allowed loop runs.
+**Not tried:** LightGBM `num_leaves`, `learning_rate`, `n_estimators`, `feature_fraction`; features
+`err_mean_14d`, `err_mae_14d`, `err_mae_30d`, `level_x_hour`, `off_share`; other half-lives and CQR windows;
+recency weighting or CQR on linear QR. These were not shown to be useless. Each row's `git_hash` is the commit
+checked out when the run started. The run's config is added in the commit that records its row.
+Details: [notebook 04](notebooks/04_optimization_log.ipynb).
+
+## Results
 
 Delivery days 2026-05-01 → 2026-10-28, 4,294 scored hours (51 dropped by the common data mask, the same for all
 three). Each model was refit once on 2022-01-01 → 2026-04-30. Units are MWh (hourly energy); bias = mean(P50 − actual).
@@ -44,54 +127,6 @@ What this says:
   ([notebook 02](notebooks/02_baselines_and_capacity_fix.ipynb), untested hypothesis).
 - The final model is the only one with coverage inside 0.76–0.84 on test, but its quantiles are centred too low
   (40% of actuals fall below its P50).
-
-## Finding 1: the vendor forecast does not cover new offshore capacity
-
-![DK1 offshore: monthly maximum hourly output, actual vs vendor](docs/figures/vendor_offshore_gap.png)
-
-From 2024 onwards actual offshore peaks rise to 1,500–1,650 MWh (to April 2026). The vendor's offshore forecasts,
-both day-ahead and its latest `ForecastCurrent`, stay capped near 1,000–1,150 MWh, so new capacity is missing from
-the vendor model. Over the same period the vendor's day-ahead total bias grows from −12 MWh (2022) to −436 MWh
-(Jan–Apr 2026). The offshore gap is not the whole story: in 2024–2026 the **onshore** bias makes up roughly 40–55%
-of the total, and its cause is not diagnosed here
-([notebook 01](notebooks/01_data_and_vendor_diagnosis.ipynb)). On the test period the raw DA total bias is −460 MWh.
-
-## Finding 2: the vendor's day-ahead forecast is issued per Danish local day
-
-The vendor DA series jumps where one issue ends and the next begins. That happens at **local** midnight (median
-step 125–190 MWh vs 50–65 MWh at other hours), at 23:00 UTC in winter and at 22:00 UTC in summer. So every "day" in
-this project is a Danish local delivery day (23 or 25 hours on DST change days). With UTC days, the last 1–2 hours
-of each day would come from a vendor forecast issued after the forecast's own issue time: a look-ahead leak.
-
-## Method and leakage controls
-
-- **Setting.** Issue time D−1 10:00 UTC for all hours of local day D. Inputs: vendor `ForecastDayAhead` for D;
-  actuals and `ForecastCurrent` up to 09:00 UTC on D−1; calendar. Vendor intraday and `ForecastCurrent` for day D
-  are never features.
-- **Leakage check.** Every feature has an as-of timestamp. `windfc.cutoff.check_features` raises if any feature
-  uses data from after the issue time, and every run goes through it (tested).
-- **Models.** Step 1 scales the vendor offshore DA by the trailing 30-day actual / `ForecastCurrent` offshore
-  ratio. The baselines add 90-day empirical error quantiles to a vendor anchor. The final model is LightGBM
-  quantile regression on the corrected vendor forecasts, ramps, calendar and 7-day vendor error statistics, with
-  365-day recency weighting and conformal calibration (CQR, 90-day window).
-- **Frozen evaluation.** `evaluate.py` (metrics, folds, DM) and `cutoff.py` were committed at `1b685ed` before run
-  001. The runner refuses to run if they differ, and the acceptance rule `decide()` was fixed before run 001
-  (`d61f8b5`). All models are scored on the same hours.
-- **Locked test.** The runner rejects configs and hours on or after 2026-05-01. Notebooks 01–04 read only earlier
-  delivery days. The test period was scored once, by `windfc.final.score_test` in notebook 05. No model,
-  config or code was changed after the results were seen.
-
-## Optimization log
-
-[`experiments/log.csv`](experiments/log.csv) holds 12 runs: 3 baselines, `004_linear_qr` as initial best, then 2
-accepted changes (006: LightGBM + CQR; 007: 365-day recency weighting) and 6 rejections (005 for under-coverage;
-008–012). An acceptance needed ≥1% lower mean CRPS, a gain on ≥3 of 4 folds, P50 MAE no more than 1% worse, and
-coverage in 0.76–0.84. Five rejections in a row triggered the pre-declared stop rule, after 7 of 15 allowed loop runs.
-**Not tried:** LightGBM `num_leaves`, `learning_rate`, `n_estimators`, `feature_fraction`; features
-`err_mean_14d`, `err_mae_14d`, `err_mae_30d`, `level_x_hour`, `off_share`; other half-lives and CQR windows;
-recency weighting or CQR on linear QR. These were not shown to be useless. Each row's `git_hash` is the commit
-checked out when the run started. The run's config is added in the commit that records its row.
-Details: [notebook 04](notebooks/04_optimization_log.ipynb).
 
 ## Limitations
 
